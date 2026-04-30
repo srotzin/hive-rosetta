@@ -1,0 +1,32 @@
+# Node
+node_modules/
+package-lock.json.bak
+*.log
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.whl
+*.tar.gz
+
+# Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local
+.env
+.env.local

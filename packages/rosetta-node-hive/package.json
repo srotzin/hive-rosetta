@@ -1,0 +1,22 @@
+{
+  "name": "@hive-civilization/rosetta-hive",
+  "version": "0.1.0",
+  "description": "Hive-flavored profile for hive-rosetta. Defaults inference traffic to hivecompute, attaches DID/Beacon attribution. Free forever.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src/", "README.md", "LICENSE"],
+  "license": "MIT",
+  "homepage": "https://github.com/srotzin/hive-rosetta",
+  "repository": { "type": "git", "url": "https://github.com/srotzin/hive-rosetta.git", "directory": "packages/rosetta-node-hive" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@hive-civilization/rosetta": "0.1.0"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "keywords": ["x402", "hive", "hivecompute", "agent", "payments"]
+}

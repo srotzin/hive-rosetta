@@ -1,11 +1,176 @@
-# Hive Rosetta — x402 Universal Adapter Cookbook
+# hive-rosetta
 
-> Canonical wire-up patterns for x402 settlement across every major agent SDK and Web3 toolchain.
-> Maintained by [Hive Civilization](https://thehiveryiq.com). MIT licensed.
+> Open x402 v2 SDK. EIP-3009 on Base. Free forever.
+>
+> Two packages, two languages, byte-identical wire format. The Hive-flavored profile defaults inference traffic to [hivecompute](https://hivecompute-g2g7.onrender.com/v1/compute/chat/completions) with mandatory spectral-ZK attestation on every response.
 
-x402 is the HTTP-402-Payment-Required protocol for agent-to-API micropayments — `transferWithAuthorization` (EIP-3009) on USDC, scheme `exact`, mostly on Base mainnet. The protocol is simple. The wiring varies per framework. This document is the canonical wiring reference.
+[![npm](https://img.shields.io/npm/v/@hive-civilization/rosetta.svg)](https://www.npmjs.com/package/@hive-civilization/rosetta)
+[![pypi](https://img.shields.io/pypi/v/hive-rosetta.svg)](https://pypi.org/project/hive-rosetta/)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-If you're a framework maintainer, agent dev, or x402 service operator, every code block here is copy-pasteable and tested against live Hive endpoints. Treasury for all examples: `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e`.
+## What this is
+
+x402 is the HTTP-402-Payment-Required protocol for agent-to-API micropayments — `transferWithAuthorization` (EIP-3009) on USDC, scheme `exact`, mostly on Base mainnet. The protocol is simple. The wiring varies per framework. `hive-rosetta` is the canonical client/server SDK for that wiring.
+
+It ships in two flavors:
+
+| Package | npm | PyPI | Defaults |
+|---|---|---|---|
+| **Open core** | [`@hive-civilization/rosetta`](https://www.npmjs.com/package/@hive-civilization/rosetta) | [`hive-rosetta`](https://pypi.org/project/hive-rosetta/) | Bring your own signer, facilitator, recipient. No Hive lock-in. |
+| **Hive-flavored** | [`@hive-civilization/rosetta-hive`](https://www.npmjs.com/package/@hive-civilization/rosetta-hive) | [`hive-rosetta-hive`](https://pypi.org/project/hive-rosetta-hive/) | Pre-wires hivemorph as facilitator, rewrites inference URLs to hivecompute, attaches DID/Beacon attribution. |
+
+Both are MIT. The Hive-flavored profile is **free forever** — it's a funnel, not a paid surface.
+
+## Install
+
+```bash
+npm install @hive-civilization/rosetta
+# or, with Hive defaults
+npm install @hive-civilization/rosetta-hive
+```
+
+```bash
+pip install hive-rosetta
+# or, with Hive defaults
+pip install hive-rosetta-hive
+```
+
+## Quick start (Node, open mode)
+
+```js
+import { client, eip3009Signer } from '@hive-civilization/rosetta';
+
+const c = client({
+  signer: eip3009Signer(process.env.PRIVATE_KEY),
+});
+
+const res = await c.fetch('https://api.example.com/v1/paid/endpoint');
+const data = await res.json();
+```
+
+The `c.fetch` call:
+1. Sends the request unauthenticated.
+2. If the server returns 402, parses the `accepts` envelope.
+3. Picks the first `exact` scheme entry, signs an EIP-3009 transferWithAuthorization.
+4. Retries the request with `PAYMENT-SIGNATURE` header (and v1 `X-Payment` for backward compatibility).
+5. Returns the 200 response.
+
+## Quick start (Python, open mode)
+
+```python
+import asyncio
+from hive_rosetta import client, eip3009_signer
+
+async def main():
+    c = client(signer=eip3009_signer(private_key))
+    res = await c.fetch("https://api.example.com/v1/paid/endpoint")
+    print(await res.aread())
+
+asyncio.run(main())
+```
+
+## Quick start (Hive flavor — the funnel)
+
+```js
+import { client } from '@hive-civilization/rosetta-hive';
+import { eip3009Signer } from '@hive-civilization/rosetta';
+
+const c = client({
+  signer: eip3009Signer(process.env.PRIVATE_KEY),
+  did: 'did:hive:agent:my-agent',  // optional; unlocks tier multipliers when registered
+});
+
+// This call gets routed through hivecompute for spectral-ZK attested inference:
+const res = await c.fetch('https://api.openai.com/v1/chat/completions', {
+  method: 'POST',
+  body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'hello' }] }),
+});
+```
+
+The Hive client adds:
+- **Inference URL rewrites:** OpenAI / Anthropic / Together / OpenRouter / Fireworks / Groq → hivecompute. Same OpenAI-compatible response shape, plus an attached spectral-ZK ticket. ~$0.02/call. 100% margin to the Hive treasury, by design — that's how the funnel works.
+- **DID attribution:** if you set `did`, every paid call surfaces under your tier in [Hive Audit](https://thehiveryiq.com/audit). Tier-verified DIDs get 8%–40% off and priority queue.
+- **Mandatory spectral-ZK on every response.** Cryptographically provable behavior trace — the only x402 audit primitive that satisfies EU AI Act Article 12 + 13 enforceable August 2026.
+
+## Server
+
+```js
+import express from 'express';
+import { server } from '@hive-civilization/rosetta';
+
+const app = express();
+
+app.use('/v1/paid/*', server({
+  payTo: '0xYourTreasury',
+  network: 'eip155:8453',
+  asset: 'USDC',
+  amount: '5000',                                   // 0.005 USDC, 6-decimal atomic
+  facilitator: 'https://your-facilitator.example',
+}).express());
+
+app.get('/v1/paid/data', (req, res) => res.json({ ok: true }));
+```
+
+## Wire format
+
+x402 v2 specifies three Base64-encoded JSON headers:
+
+| Header | Direction | Meaning |
+|---|---|---|
+| `PAYMENT-REQUIRED` | Server → Client (with 402) | The `accepts` envelope: schemes, networks, assets, amounts, recipients. |
+| `PAYMENT-SIGNATURE` | Client → Server | The signed authorization. |
+| `PAYMENT-RESPONSE` | Server → Client (with 200) | Settlement result: tx hash, network, success. |
+
+For backward compatibility with x402 v1 deployments, `hive-rosetta` reads `X-Payment` / `x-payment` / `X-PAYMENT` on input and emits v2 names by default. Set `protocolVersion: 'both'` to dual-emit during a rollover window.
+
+## Conformance
+
+Both packages run a shared cross-language test suite (112 vectors at v0.1):
+
+```bash
+npm test                                      # Node
+.venv/bin/python -m pytest                    # Python
+```
+
+The Node and Python signers produce **byte-identical signatures** for identical inputs. The canonical-form JSON output is byte-identical to [`hivetrust/src/lib/canonical.js`](https://github.com/srotzin/hivetrust). If those drift, spectral-ZK ticket verification breaks silently — so we test for it explicitly.
+
+## Scope (v0.1)
+
+In the box:
+- **Chains:** Base mainnet (`eip155:8453`), Base Sepolia (`eip155:84532`).
+- **Assets:** USDC (USD Coin v2), USDT (Tether USD v1) on Base mainnet.
+- **Schemes:** `exact`.
+- **Signers:** EIP-3009 (`transferWithAuthorization`).
+- **Server adapters:** Express (Node), FastAPI middleware (Python).
+
+Not in v0.1 (ships in v0.2+ as paying customers ask for it):
+- Other chains (Solana, Algorand, Aptos, Hedera, Stellar, Sui, Keeta).
+- Other schemes (`upto`, `batch-settlement`).
+- Permit2, ERC-7710, EIP-1271 signers.
+- Browser bundle, i18n, MCP/A2A transport adapters.
+
+## Why this exists
+
+There are 13 other x402 SDKs. They all do most of the things. None produce a cryptographically provable audit trail that satisfies EU AI Act Article 12 (logging) + Article 13 (transparency), enforceable August 2026. The Hive-flavored `rosetta-hive` package is the only one that does — because it routes through a substrate that bakes spectral-ZK attestation into every response.
+
+If you're a framework maintainer, agent dev, or x402 service operator, you can use the open core and ignore Hive entirely. If you're a regulated agent — financial services, healthcare, EU markets — the Hive flavor is the path of lowest legal friction.
+
+## Live endpoints
+
+- Hivecompute (paid inference, spectral-ZK on every response): `https://hivecompute-g2g7.onrender.com/v1/compute/chat/completions`
+- Hivemorph facilitator: `https://hivemorph.onrender.com`
+- Hivetrust (DID + tier resolver): `https://hivetrust.onrender.com`
+- Hive Audit (the moat product): [`https://thehiveryiq.com/audit`](https://thehiveryiq.com/audit)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+---
+
+# Appendix — Universal Adapter Cookbook
+
+> The following is the original `hive-rosetta` cookbook (v1.0.0). It documents how to wire x402 settlement across every major agent SDK and Web3 toolchain. Examples target the open core and the `thehiveryiq.com` endpoint family.
 
 ## Index
 
