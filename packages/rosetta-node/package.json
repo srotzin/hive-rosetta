@@ -1,5 +1,5 @@
 {
-  "name": "@hive-civilization/rosetta",
+  "name": "hive-rosetta",
   "version": "0.1.0",
   "description": "x402 v2 universal client/server SDK. Open. EIP-3009 on Base. Free forever.",
   "type": "module",
@@ -11,11 +11,21 @@
     "./signer": "./src/signer.js",
     "./registry": "./src/registry.js"
   },
-  "files": ["src/", "README.md", "LICENSE"],
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
   "license": "MIT",
   "homepage": "https://github.com/srotzin/hive-rosetta",
-  "repository": { "type": "git", "url": "https://github.com/srotzin/hive-rosetta.git", "directory": "packages/rosetta-node" },
-  "engines": { "node": ">=20" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/srotzin/hive-rosetta.git",
+    "directory": "packages/rosetta-node"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@noble/curves": "^1.6.0",
     "@noble/hashes": "^1.5.0",
@@ -24,5 +34,13 @@
   "scripts": {
     "test": "node --test test/"
   },
-  "keywords": ["x402", "eip-3009", "agent", "payments", "base", "usdc", "hive"]
+  "keywords": [
+    "x402",
+    "eip-3009",
+    "agent",
+    "payments",
+    "base",
+    "usdc",
+    "hive"
+  ]
 }
