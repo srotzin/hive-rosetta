@@ -19,4 +19,4 @@ HEADER_PAYMENT_RESPONSE: str = "PAYMENT-RESPONSE"
 HEADER_V1_INPUT_VARIANTS: tuple[str, ...] = ("X-Payment", "x-payment", "X-PAYMENT")
 HEADER_V1_DEFAULT_OUTPUT: str = "X-Payment"
 
-PACKAGE_VERSION: str = "0.1.0"
+PACKAGE_VERSION: str = "0.2.0"

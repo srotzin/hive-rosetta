@@ -13,4 +13,4 @@ export const HEADER_PAYMENT_RESPONSE = 'PAYMENT-RESPONSE';
 export const HEADER_V1_INPUT_VARIANTS = ['X-Payment', 'x-payment', 'X-PAYMENT'];
 export const HEADER_V1_DEFAULT_OUTPUT = 'X-Payment';
 
-export const PACKAGE_VERSION = '0.1.0';
+export const PACKAGE_VERSION = '0.2.0';

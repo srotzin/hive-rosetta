@@ -1,6 +1,6 @@
 """
 hive-rosetta — open x402 v2 SDK for Python.
-v0.1: Base mainnet + Sepolia, EIP-3009, scheme=exact.
+v0.2: Base mainnet + Sepolia, EIP-3009, scheme=exact, opt-in inference routing.
 
 Public exports mirror @hive-civilization/rosetta (Node) index.js exactly.
 """
@@ -25,6 +25,12 @@ from .registry import (
     assert_recipient,
     assert_valid_before,
     resolve_asset,
+)
+from .routing import (
+    HIVE_FACILITATOR,
+    HIVECOMPUTE_TARGET,
+    INFERENCE_URL_PATTERNS,
+    matches_inference_pattern,
 )
 from .server import server
 from .signer import eip3009_signer, random_nonce
@@ -69,6 +75,11 @@ __all__ = [
     # signer
     "eip3009_signer",
     "random_nonce",
+    # routing (v0.2.0)
+    "HIVE_FACILITATOR",
+    "HIVECOMPUTE_TARGET",
+    "INFERENCE_URL_PATTERNS",
+    "matches_inference_pattern",
     # high-level
     "client",
     "server",

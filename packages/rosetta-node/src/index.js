@@ -1,5 +1,5 @@
-// @hive-civilization/rosetta — open x402 v2 SDK for Node.
-// v0.1: Base mainnet + Sepolia, EIP-3009, scheme=exact.
+// hive-rosetta — open x402 v2 SDK for Node.
+// v0.2: Base mainnet + Sepolia, EIP-3009, scheme=exact, opt-in inference routing.
 
 export { canonicalize, canonicalBytes } from './canonical.js';
 export { RosettaError, ErrorCode } from './errors.js';
@@ -19,5 +19,11 @@ export {
   readPaymentResponse, writePaymentResponse,
 } from './headers.js';
 export { eip3009Signer, randomNonce } from './signer.js';
+export {
+  HIVE_FACILITATOR,
+  HIVECOMPUTE_TARGET,
+  INFERENCE_URL_PATTERNS,
+  matchesInferencePattern,
+} from './routing.js';
 export { client } from './client.js';
 export { server } from './server.js';

@@ -4,6 +4,13 @@ High-level async client. Drop-in httpx wrapper that handles 402 → sign → ret
 Defaults to v2 headers on emit, accepts v1 + v2 on read. In dual mode
 emits both for Hive-internal traffic during the rollover.
 
+v0.2.0 adds opt-in inference routing. When ``route_inference=True``,
+requests to known inference endpoints (openai/anthropic/together/
+openrouter/fireworks/groq) are rewritten to the canonical hivecompute
+target before the first request, and the 402 retry hits the rewritten
+URL. When ``route_inference=False`` (default), behavior is identical
+to v0.1.0 — neutral signing utility, no rewriting, no Hive headers.
+
 Mirrors rosetta-node/src/client.js.
 """
 from __future__ import annotations
@@ -14,6 +21,8 @@ from typing import Any, Callable
 from .canonical import canonicalize
 from .errors import ErrorCode, RosettaError
 from .headers import read_payment_response, read_payment_signature, write_payment_signature
+from .routing import HIVECOMPUTE_TARGET, matches_inference_pattern
+from .version import PACKAGE_VERSION
 
 
 def client(
@@ -23,6 +32,9 @@ def client(
     on_sign: Callable | None = None,
     on_settle: Callable | None = None,
     http_client: Any = None,
+    route_inference: bool = False,
+    did: str | None = None,
+    on_rewrite: Callable | None = None,
 ) -> dict[str, Any]:
     """Create a rosetta client dict with async fetch and preview methods.
 
@@ -41,10 +53,25 @@ def client(
     http_client:
         Optional httpx.AsyncClient instance. If None, a fresh client is
         created per request (simple, good enough for v0.1).
+    route_inference:
+        Opt-in. When True, requests to known inference endpoints are
+        rewritten to the canonical hivecompute target. Default False —
+        identical behavior to v0.1.0.
+    did:
+        Optional DID. When set and ``route_inference`` is True, attached
+        as ``X-Hive-DID`` on the rewritten request.
+    on_rewrite:
+        Optional callback ``(rewrite_info: dict)`` called once per request
+        when a rewrite occurs. ``rewrite_info`` contains
+        ``{"from": original_url, "to": HIVECOMPUTE_TARGET, "label": pattern_label}``.
     """
 
     async def fetch(url: str, **kwargs: Any) -> Any:
         """Fetch *url*, handle 402 by signing and retrying.
+
+        When ``route_inference=True`` and the URL matches a known inference
+        pattern, the URL is rewritten to the hivecompute target before the
+        first request. The 402 retry uses the rewritten URL.
 
         Keyword args are forwarded to httpx.AsyncClient.request. The
         ``method`` kwarg defaults to 'GET'; ``headers`` may be a dict.
@@ -60,8 +87,28 @@ def client(
         method = kwargs.pop("method", "GET")
         headers_in: dict = dict(kwargs.pop("headers", {}))
 
+        # ---- Phase 1: rewrite (opt-in only) ----
+        target_url = url
+        rewrite_label: str | None = None
+        if route_inference:
+            label = matches_inference_pattern(url)
+            if label is not None:
+                target_url = HIVECOMPUTE_TARGET
+                rewrite_label = label
+                if on_rewrite is not None:
+                    on_rewrite({"from": url, "to": target_url, "label": label})
+
+        # Hive attribution headers attach only when routing is on AND a
+        # rewrite actually happened. A non-matching URL with the flag on
+        # gets no extra headers — clean bypass.
+        if rewrite_label is not None:
+            headers_in["X-Hive-Origin"] = f"rosetta@{PACKAGE_VERSION}"
+            headers_in["X-Hive-Rewrite-From"] = rewrite_label
+            if did:
+                headers_in["X-Hive-DID"] = did
+
         async with httpx.AsyncClient() as hc:
-            first = await hc.request(method, url, headers=headers_in, **kwargs)
+            first = await hc.request(method, target_url, headers=headers_in, **kwargs)
 
             if first.status_code != 402:
                 return first
@@ -73,7 +120,7 @@ def client(
                 raise RosettaError(
                     ErrorCode["ERR_NO_ACCEPTABLE_PAYMENT"],
                     "402 response had no accepts list",
-                    {"url": url, "status": first.status_code},
+                    {"url": target_url, "status": first.status_code},
                 )
 
             # v0.1 negotiation: first 'exact' entry
@@ -89,7 +136,7 @@ def client(
                 raise RosettaError(
                     ErrorCode["ERR_SIGNER_FAILED"],
                     "Got 402 but no signer configured on client",
-                    {"url": url},
+                    {"url": target_url},
                 )
 
             amount = choice.get("maxAmountRequired") or choice.get("amount")
@@ -102,11 +149,14 @@ def client(
             if on_sign:
                 await on_sign(signed)
 
-            # Retry with payment header
+            # Retry with payment header — CRITICAL: retry hits target_url
+            # (the rewritten URL), not the original. This is the closed
+            # loop. If route_inference rewrote openai → hivecompute, the
+            # signed retry must hit hivecompute or the funnel earns nothing.
             retry_headers = dict(headers_in)
             write_payment_signature(retry_headers, signed, {"protocol_version": protocol_version})
 
-            retried = await hc.request(method, url, headers=retry_headers, **kwargs)
+            retried = await hc.request(method, target_url, headers=retry_headers, **kwargs)
 
             settlement = read_payment_response(dict(retried.headers))
             if settlement and on_settle:

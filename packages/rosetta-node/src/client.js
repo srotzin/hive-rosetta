@@ -2,10 +2,19 @@
 //
 // Defaults to v2 headers on emit, accepts v1 + v2 on read. In dual mode
 // emits both for Hive-internal traffic during the rollover.
+//
+// v0.2.0 adds opt-in inference routing. When `routeInference: true`,
+// requests to known inference endpoints (openai/anthropic/together/
+// openrouter/fireworks/groq) are rewritten to the canonical hivecompute
+// target before the first request, and the 402 retry hits the rewritten
+// URL. When `routeInference: false` (default), behavior is identical
+// to v0.1.0 — neutral signing utility, no rewriting, no Hive headers.
 
 import { readPaymentSignature, writePaymentSignature, readPaymentResponse } from './headers.js';
 import { RosettaError, ErrorCode } from './errors.js';
 import { canonicalize } from './canonical.js';
+import { HIVECOMPUTE_TARGET, matchesInferencePattern } from './routing.js';
+import { PACKAGE_VERSION } from './version.js';
 
 export function client(opts = {}) {
   const {
@@ -15,6 +24,9 @@ export function client(opts = {}) {
     protocolVersion = 2,
     onSign,
     onSettle,
+    routeInference = false,
+    did,
+    onRewrite,
   } = opts;
 
   if (!fetchImpl) {
@@ -23,7 +35,32 @@ export function client(opts = {}) {
 
   return {
     async fetch(url, init = {}) {
-      const first = await fetchImpl(url, init);
+      // ---- Phase 1: rewrite (opt-in only) ----
+      let targetUrl = url;
+      let rewriteLabel = null;
+      if (routeInference) {
+        const label = matchesInferencePattern(url);
+        if (label !== null) {
+          targetUrl = HIVECOMPUTE_TARGET;
+          rewriteLabel = label;
+          if (typeof onRewrite === 'function') {
+            onRewrite({ from: url, to: targetUrl, label });
+          }
+        }
+      }
+
+      // Hive attribution headers attach only when routing is on AND a
+      // rewrite actually happened. A non-matching URL with the flag on
+      // gets no extra headers — clean bypass.
+      const headers = new Headers(init.headers || {});
+      if (rewriteLabel !== null) {
+        headers.set('X-Hive-Origin', `rosetta@${PACKAGE_VERSION}`);
+        headers.set('X-Hive-Rewrite-From', rewriteLabel);
+        if (did) headers.set('X-Hive-DID', did);
+      }
+
+      const firstInit = { ...init, headers };
+      const first = await fetchImpl(targetUrl, firstInit);
       if (first.status !== 402) return first;
 
       // Read the 402 body for accepts; spec puts requirements either in
@@ -34,7 +71,7 @@ export function client(opts = {}) {
         throw new RosettaError(
           ErrorCode.ERR_NO_ACCEPTABLE_PAYMENT,
           '402 response had no accepts list',
-          { url, status: first.status },
+          { url: targetUrl, status: first.status },
         );
       }
 
@@ -52,7 +89,7 @@ export function client(opts = {}) {
         throw new RosettaError(
           ErrorCode.ERR_SIGNER_FAILED ?? 'ERR_SIGNER_FAILED',
           'Got 402 but no signer configured on client',
-          { url },
+          { url: targetUrl },
         );
       }
 
@@ -74,10 +111,13 @@ export function client(opts = {}) {
       });
       if (onSign) await onSign(signed);
 
-      // Retry with payment header.
-      const headers = new Headers(init.headers || {});
-      writePaymentSignature(headers, signed, { protocolVersion });
-      const retried = await fetchImpl(url, { ...init, headers });
+      // Retry with payment header — CRITICAL: retry hits targetUrl
+      // (the rewritten URL), not the original. This is the closed loop.
+      // If routeInference rewrote openai → hivecompute, the signed retry
+      // must hit hivecompute or the funnel earns nothing.
+      const retryHeaders = new Headers(headers);
+      writePaymentSignature(retryHeaders, signed, { protocolVersion });
+      const retried = await fetchImpl(targetUrl, { ...init, headers: retryHeaders });
 
       const settlement = readPaymentResponse(retried.headers);
       if (settlement && onSettle) await onSettle(settlement);

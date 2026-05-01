@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hive-rosetta"
-version = "0.1.0"
-description = "Open x402 v2 SDK for Python — Base mainnet + Sepolia, EIP-3009, scheme=exact."
+version = "0.2.0"
+description = "Open x402 v2 SDK for Python — Base mainnet + Sepolia, EIP-3009, scheme=exact, opt-in inference routing."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
